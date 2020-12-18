@@ -1,11 +1,18 @@
-# NERZoo
-This is an easy-used zoo of NER tools.
-本项目的初衷是：建立一个NER标注模型库，帮助用户迅速搭建自己的工程，以投入更多的经历在NLP的下游任务中。
-本项目远大的理想是：（1）建立一个分布式、实时NER中台，可同时服务于多个下游任务；（2）主动识别基础实体：人名、地名、组织名、时间、金钱、百分数；（3）少样本训练，迁移已有领域知识，快速识别用户自定义实体；（3）支持远程监督的方式进行数据生成；（4）支持带噪学习
+# ner-with-noise
+- This is an NER tools which can help you train better chinese ner model when facing noisy data.
+- 本项目旨在提供一个中文带噪NER的训练工具箱。
 
-本项目准备实现一下几种baseline.
-(1)CRF
-(2)BiLSTM-CRF
-(3)Lattice-CRF
-(4)ID-CNN
-(5)...
+NER任务作为NLP领域的一个基础任务，在神经网络大肆盛行的今天，似乎快要被人们遗忘了。
+不可否认的是，BiLSTM-CRF已成为这类任务的标配，一般情况下，使用该模型能解决90%的问题。
+但是想要轻松的应对这个领域的其他问题：如何解决数据存在噪声、数据量过少、实体嵌套、联合关系抽取等问题，似乎还未有定论。
+
+本项目旨在帮助研究者或者开发者在面对**数据质量**问题时，提供一个简单易用的工具箱。
+
+本项目拟实现以下几种baseline.
+|method|paper|
+|:--:|:--|
+|Partical-CRF/Fuzzy-CRF|(2007 AAAI) [Learning extractors from unlabeled text using relevant databases](https://www.aaai.org/Papers/Workshops/2007/WS-07-14/WS07-14-002.pdf)|
+|Positive-Unlabeled Learning|(2019 ACL) [Distantly Supervised Named Entity Recognition using Positive Unlabeled Learning](https://arxiv.org/pdf/1906.01378.pdf)|
+|CrossWeigh|(2019 EMNLP) [CrossWeigh Training Named Entity Tagger from Imperfect Annotations](https://arxiv.org/pdf/1909.01441)|
+|Marginal Likelihood CRF|(2018 EMNLP) [Marginal Likelihood Training of BiLSTM-CRF for Biomedical Named Entity Recognition from Disjoint Label Sets](https://www.aclweb.org/anthology/D18-1306.pdf)|
+
