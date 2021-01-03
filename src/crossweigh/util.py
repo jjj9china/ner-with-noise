@@ -1,73 +1,12 @@
 # -*- coding:utf-8 -*-
 
 import os
-import random
-import config
+
+from crossweigh import config
 
 
-def is_postive_sent(labels):
-    for label in labels:
-        if label != 'O':
-            return True
-    return False
-
-
-def merge_files(input_dir, output_file, sample_flag=True):
-    ids = []
-    path = 'D:\\myProject\\learning-with-noise\\test\\annoid_300.txt'
-    with open(path, 'r', encoding='utf-8') as f:
-        for line in f.readlines():
-            id = line.strip()
-            ids.append(id)
-
-    if os.path.exists(output_file):
-        os.remove(output_file)
-    assert not os.path.exists(output_file)
-
-    sentences = []
-
-    count = 0
-    files_list = os.listdir(input_dir)
-    for i in range(0, len(files_list)):
-
-        # remove data in benchmark data set
-        if files_list[i].split('.')[0] in ids:
-            count += 1
-            continue
-
-        input_file = os.path.join(input_dir, files_list[i])
-        with open(input_file, 'r', encoding='utf-8') as f:
-            tokens = []
-            labels = []
-            for line in f.readlines() + ['']:
-                if len(line) == 0 or line.isspace():
-                    if len(tokens) > 1:
-                        random_num = random.uniform(0, 1)
-
-                        if sample_flag:
-                            if not is_postive_sent(labels):
-                                if random_num > config.SAMPLING_RATE:
-                                    sentences.append((tokens, labels))
-                            else:
-                                sentences.append((tokens, labels))
-                        else:
-                            sentences.append((tokens, labels))
-
-                    tokens = []
-                    labels = []
-                else:
-                    splits = line.strip().split('\t')
-                    token, label = '\t'.join(splits[:2]), splits[-1]
-                    tokens.append(token)
-                    labels.append(label)
-
-    with open(output_file, 'w', encoding='utf-8') as f:
-        for sentence in sentences:
-            for token, label in zip(*sentence):
-                f.write(f'{token}\t{label}\n')
-            f.write('\n')
-
-    print(f'remove data count: {count}')
+__all__ = ['load_data', 'validate_bio', 'iob2bio', 'iobes2bio', 'sio2bio', 'prepare_folder',
+           'save_data']
 
 
 def load_data(path, schema='bio'):

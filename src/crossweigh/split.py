@@ -1,13 +1,13 @@
 # -*- coding:utf-8 -*-
 
-import sys
 import os
+import sys
 import random
 import json
 import argparse
 
-import utils
-import config
+from crossweigh import util
+from crossweigh import config
 
 
 def load_all_data(input_files, schema):
@@ -29,11 +29,11 @@ def load_all_data(input_files, schema):
         for j in range(0, len(files_list)):
             input_file = os.path.join(input_files, files_list[j])
             if os.path.isfile(input_file):
-                all_data.extend(utils.load_data(input_file, schema))
+                all_data.extend(util.load_data(input_file, schema))
 
     elif os.path.isfile(input_files):
         print('input files is a file.')
-        all_data.extend(utils.load_data(input_files, schema))
+        all_data.extend(util.load_data(input_files, schema))
 
     else:
         print('wrong input files!')
@@ -138,7 +138,7 @@ def main(input_files, output_folder, folds, schema):
     """
 
     assert folds > 1
-    utils.prepare_folder(output_folder)
+    util.prepare_folder(output_folder)
 
     all_data = load_all_data(input_files, schema)
     sentence_entities = [list(map(lambda x: x['surface'],
@@ -151,11 +151,11 @@ def main(input_files, output_folder, folds, schema):
         trainIndex = info[f'fold-{i}']['train_index']
         devIndex = info[f'fold-{i}']['dev_index']
 
-        utils.prepare_folder(os.path.join(output_folder, f'fold-{i}'))
+        util.prepare_folder(os.path.join(output_folder, f'fold-{i}'))
 
         # save train data
-        utils.save_data(os.path.join(output_folder, f'fold-{i}', f'train.col'), all_data, trainIndex)
-        utils.save_data(os.path.join(output_folder, f'fold-{i}', f'dev.col'), all_data, devIndex)
+        util.save_data(os.path.join(output_folder, f'fold-{i}', f'train.col'), all_data, trainIndex)
+        util.save_data(os.path.join(output_folder, f'fold-{i}', f'dev.col'), all_data, devIndex)
 
     output_folder_json = os.path.join(output_folder, 'info.json')
     if os.path.exists(output_folder_json):
@@ -166,10 +166,12 @@ def main(input_files, output_folder, folds, schema):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Split input_file into output_folder.')
-    parser.add_argument('--input_files', help='input path, files or folder', default='../../data/train.col', nargs='+')
+    parser.add_argument('--input_files', help='input path, files or folder',
+                        default='C:/Users/junjun.jiang/Desktop/data/train.col',
+                        nargs='+')
 
     parser.add_argument('--output_folder', help='output folder, will create per-fold folder in itr',
-                        default='../../data/')
+                        default='C:/Users/junjun.jiang/Desktop/data/')
 
     parser.add_argument('--splits', help='number of splits to make', type=int, default=5)
 

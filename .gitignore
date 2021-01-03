@@ -1,0 +1,10 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+
+data/
+log/
+saved_models/
+raw_data/
+modified_data/
+

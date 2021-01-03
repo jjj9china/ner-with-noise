@@ -6,8 +6,8 @@ import os
 import glob
 from collections import defaultdict
 
-import utils
-import config
+from crossweigh import util
+from crossweigh import config
 
 
 def load_predict_file(path):
@@ -84,7 +84,7 @@ def main(split_folders, split_info, splits, origin_files, origin_file_schema, ou
         os.remove(os.path.join(output_folder, output_json))
 
     # load origin data
-    origin_data = utils.load_data(origin_files, origin_file_schema)
+    origin_data = util.load_data(origin_files, origin_file_schema)
 
     split_folder_list = glob.glob(split_folders)
     # load split info
@@ -184,23 +184,24 @@ def main(split_folders, split_info, splits, origin_files, origin_file_schema, ou
 
 
 if __name__ == '__main__':
-    """Before run this collect script, you should train models in /split-*/fold-*/ train data, 
+    """
+    Before run this collect script, you should train models in /split-*/fold-*/ train data, 
     and predict in dev data. For convenience, you'd better save model predict files in the same folder.
     Predict file at least have three columns: words, origin-label, predict-label
     """
     parser = argparse.ArgumentParser(description="collect models' predicts data and save part of them")
     parser.add_argument('--split_folders', help='different split folders',
-                        default='../../data/split-*',
+                        default='C:/Users/junjun.jiang/Desktop/data/split-*',
                         nargs='+')
     parser.add_argument('--split_info', default='info.json')
     parser.add_argument('--splits', help='number of splits to make', type=int, default=5)
     parser.add_argument('--folds', help='number of folds to make', type=int, default=5)
-    parser.add_argument('--origin_files', default='../../data/train.col')
+    parser.add_argument('--origin_files', default='C:/Users/junjun.jiang/Desktop/data/train.col')
     parser.add_argument('--origin_file_schema', default="sio", choices=["sio", "bio", "iob", "iobes", "none"])
-    parser.add_argument('--output_folder', default='../../data/')
-    parser.add_argument('--output_file', default='unknown_label_5.col')
+    parser.add_argument('--output_folder', default='C:/Users/junjun.jiang/Desktop/data/')
+    parser.add_argument('--output_file', default='unknow_label_5.col')
     parser.add_argument('--output_json', default='error_count_json.json')
-    parser.add_argument('--model_predicted_filename', default='dev.col')
+    parser.add_argument('--model_predicted_filename', default='predict.col')
     parser.add_argument('--eps', help='clean data ration in data set', type=float, default=0.7)
     args = parser.parse_args()
 
