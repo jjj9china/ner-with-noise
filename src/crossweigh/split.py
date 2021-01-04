@@ -166,21 +166,13 @@ def main(input_files, output_folder, folds, schema):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Split input_file into output_folder.')
-    parser.add_argument('--input_files', help='input path, files or folder',
-                        default='C:/Users/junjun.jiang/Desktop/data/train.col',
-                        nargs='+')
-
-    parser.add_argument('--output_folder', help='output folder, will create per-fold folder in itr',
-                        default='C:/Users/junjun.jiang/Desktop/data/')
-
+    parser.add_argument('--input_files', help='input path, files or folder', default='../data/train.col')
+    parser.add_argument('--output_folder', help='output folder, will create in itr', default='../data/')
     parser.add_argument('--splits', help='number of splits to make', type=int, default=5)
-
     parser.add_argument('--folds', help='number of folds to make', type=int, default=5)
-
     parser.add_argument('--schema', help='label typing schema', default="sio",
                         choices=["sio", "bio", "iob", "iobes", "none"])
     args = parser.parse_args()
-    # print(vars(args))
 
     for i in range(args.splits):
         output_folder = args.output_folder + f'split-{i}/'

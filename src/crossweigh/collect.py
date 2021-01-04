@@ -190,16 +190,14 @@ if __name__ == '__main__':
     Predict file at least have three columns: words, origin-label, predict-label
     """
     parser = argparse.ArgumentParser(description="collect models' predicts data and save part of them")
-    parser.add_argument('--split_folders', help='different split folders',
-                        default='C:/Users/junjun.jiang/Desktop/data/split-*',
-                        nargs='+')
+    parser.add_argument('--split_folders', help='different split folders', default='../data/split-*', nargs='+')
     parser.add_argument('--split_info', default='info.json')
     parser.add_argument('--splits', help='number of splits to make', type=int, default=5)
     parser.add_argument('--folds', help='number of folds to make', type=int, default=5)
-    parser.add_argument('--origin_files', default='C:/Users/junjun.jiang/Desktop/data/train.col')
+    parser.add_argument('--origin_files', default='../data/train.col')
     parser.add_argument('--origin_file_schema', default="sio", choices=["sio", "bio", "iob", "iobes", "none"])
-    parser.add_argument('--output_folder', default='C:/Users/junjun.jiang/Desktop/data/')
-    parser.add_argument('--output_file', default='unknow_label_5.col')
+    parser.add_argument('--output_folder', default='../data/')
+    parser.add_argument('--output_file', default='unknown_label.col')
     parser.add_argument('--output_json', default='error_count_json.json')
     parser.add_argument('--model_predicted_filename', default='predict.col')
     parser.add_argument('--eps', help='clean data ration in data set', type=float, default=0.7)
