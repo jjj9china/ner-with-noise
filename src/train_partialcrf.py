@@ -222,6 +222,10 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, output_pat
 
 
 if __name__ == "__main__":
+    # We assume that the train/dev are modified-data which have `multi-tag` or `unkown-tag` in its label column.
+    # If you offer raw-data(all str in label column are valid label), this script will run like bilstm-crf model.
+    # If you do not have modified-data, you can run `split.py` and `collect.py` in **crossweigh** folder to get modified-data.
+    # More detail about crossweigh, please move to **crossweigh** folder.
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_file', default='../data/train_demo.col')
     parser.add_argument('--dev_file', default='../data/dev_demo.col')
