@@ -46,8 +46,9 @@ def load_from_splits(paths, model_predicted_filename, info_dict):
         # you might should change this code-cell in your system
         model_predicted_path = os.path.join(path, model_predicted_filename)
         assert os.path.exists(model_predicted_path)
-        split_index = path.split('\\')[1]
-        fold_index = path.split('\\')[2]
+        path = path.replace('\\', '/')
+        split_index = path.split('/')[-2]
+        fold_index = path.split('/')[-1]
         # =================================
 
         model_predicted = load_predict_file(model_predicted_path)
@@ -190,7 +191,7 @@ if __name__ == '__main__':
     Predict file at least have three columns: words, origin-label, predict-label
     """
     parser = argparse.ArgumentParser(description="collect models' predicts data and save part of them")
-    parser.add_argument('--split_folders', help='different split folders', default='../data/split-*', nargs='+')
+    parser.add_argument('--split_folders', help='different split folders', default='../data/split-*')
     parser.add_argument('--split_info', default='info.json')
     parser.add_argument('--splits', help='number of splits to make', type=int, default=5)
     parser.add_argument('--folds', help='number of folds to make', type=int, default=5)
