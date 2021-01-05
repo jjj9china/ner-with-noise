@@ -4,16 +4,16 @@ export PYTHONPATH=$PYTHONPATH:$(pwd)
 
 python ./crossweigh/split.py --input_files ../data/train.col \
                              --output_folder ../data/ \
-                             --splits 3 \
-                             --folds 3 \
+                             --splits 5 \
+                             --folds 5 \
                              --schema sio
 
 export DATA_FOLDER=../data
 export LOG_FOLDER=../log
 export SAVED_MODEL_PATH=../saved_model
 # training each split/fold
-for splits in $(seq 0 1 2); do
-    for folds in $(seq 0 1 2); do
+for splits in $(seq 0 1 4); do
+    for folds in $(seq 0 1 4); do
         FOLD_FOLDER=split-${splits}/fold-${folds}
         python train_baseline.py --train_file ${DATA_FOLDER}/${FOLD_FOLDER}/train.col \
                                  --dev_file ${DATA_FOLDER}/${FOLD_FOLDER}/dev.col \
@@ -29,12 +29,11 @@ for splits in $(seq 0 1 2); do
 done
 
 # collect and generate data
-export SPLIT_FOLDER=../data/split-*
-python ./crossweigh/collect.py --split_folders ${SPLIT_FOLDER} \
+python ./crossweigh/collect.py --split_folders ../data/split-\* \
                                --split_info info.json\
-                               --splits 3 \
-                               --folds 3 \
-                               --origin_files ${DATA_FOLDER}/${FOLD_FOLDER}/train.col \
+                               --splits 5 \
+                               --folds 5 \
+                               --origin_files ${DATA_FOLDER}/train.col \
                                --origin_file_schema sio \
                                --output_folder ${DATA_FOLDER}/ \
                                --output_file unknown_tag.col \
