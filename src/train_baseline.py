@@ -153,7 +153,8 @@ def model_test(model, word_lists, tag_lists, word2id, tag2id, use_crf, device):
     return pred_tag_lists, tag_lists
 
 
-def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name, output_path, log_path, use_crf=True):
+def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name, output_path, log_path, 
+          use_crf=True, evaluate_on_dev=False):
     """Train model in train-data, evaluate it in dev-data, and finally test it in test-data
 
     Args:
@@ -166,6 +167,7 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name
         output_path: Predict file path.
         log_path:
         use_crf: use crf or not.
+        evaluate_on_dev:
     """
     current_time = time.strftime('%Y%m%d%H%M%S', time.localtime(time.time()))
     logger = get_logger(os.path.join(log_path, current_time + '-baseline.log'))
@@ -224,15 +226,22 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name
     save_model(bilstm_model, os.path.join(model_save_path, model_name + '-model.pkl'))
     logger.info("train done, time consuming {} s.".format(int(time.time() - start)))
 
-    # ======== 3. 模型评估 ========
+    # ======== 4. 模型评估 ========
     logger.info("Evaluating model...")
-    pred_tag_lists, test_tag_lists = model_test(bilstm_model, test_word_lists, test_tag_lists, word2id, tag2id,
-                                                use_crf, device)
+    if evaluate_on_dev:
+        evaluate_word_lists = dev_word_lists
+        evaluate_tag_lists = dev_tag_lists
+    else:
+        evaluate_word_lists = test_word_lists
+        evaluate_tag_lists = test_tag_lists
+        
+    pred_tag_lists, test_tag_lists = model_test(bilstm_model, evaluate_word_lists, evaluate_tag_lists, 
+                                                word2id, tag2id, use_crf, device)
 
-    metrics = Metrics(test_tag_lists, pred_tag_lists, logger, remove_O=True)
+    metrics = Metrics(evaluate_tag_lists, pred_tag_lists, logger, remove_O=True)
     metrics.report_scores()
     metrics.report_confusion_matrix()
-    save_predict(test_word_lists, test_tag_lists, pred_tag_lists, os.path.join(output_path, 'predict.col'))
+    save_predict(evaluate_word_lists, evaluate_tag_lists, pred_tag_lists, os.path.join(output_path, 'predict.col'))
 
 
 if __name__ == "__main__":
@@ -246,8 +255,10 @@ if __name__ == "__main__":
     parser.add_argument('--output_path', default='../data/output/')
     parser.add_argument('--log_path', default='../log/')
     parser.add_argument('--use_crf', type=bool, default=True)
+    parser.add_argument('--evaluate_on_dev', type=bool, default=False)
     args = parser.parse_args()
 
     train(args.train_file, args.dev_file, args.test_file, args.gaz_file,
-          args.model_save_path, args.model_name, args.output_path, args.log_path, args.use_crf)
+          args.model_save_path, args.model_name, args.output_path, args.log_path,
+          args.use_crf, args.evaluate_on_dev)
 
