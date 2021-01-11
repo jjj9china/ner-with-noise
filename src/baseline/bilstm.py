@@ -34,6 +34,7 @@ class BiLstm(nn.Module):
 
         self.linear = nn.Linear(2*hidden_size, out_size)
 
+        self.features = None
         self.best_model = None
 
     def forward(self, sents_tensor, lengths: list):
@@ -50,6 +51,7 @@ class BiLstm(nn.Module):
         rnn_out, _ = pad_packed_sequence(rnn_out, batch_first=True)
 
         scores = self.linear(rnn_out)  # [B, L, out_size]
+        self.features = rnn_out
 
         return scores
 
