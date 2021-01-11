@@ -5,12 +5,13 @@
 import pickle
 import torch
 import logging
+import numpy as np
 
 from preprocess import config as DataConfig
 
 
 __all__ = ['save_predict', 'save_model', 'load_model', 'sort_by_lengths',
-           'tensorized_word', 'tensorized_label', 'get_logger']
+           'tensorized_word', 'tensorized_label', 'get_logger', 'get_tag_bitmap']
 
 
 def save_predict(test_word_lists, test_tag_lists, pred_tag_lists, path):
@@ -172,3 +173,26 @@ def create_possible_tag_masks(num_tags: int, tags: torch.Tensor) -> torch.Tensor
     masks.scatter_(2, tags_, 1)
     masks[no_annotation_idx] = 1
     return masks
+
+
+def get_tag_bitmap(seqs, labels, v_predict, tag2id):
+    from mentornet import config as mentorConfig
+    batch_size = len(seqs)
+    seq_len = len(seqs[0])
+    num_tags = len(tag2id)
+    bitmap = torch.zeros(batch_size, seq_len, num_tags, dtype=torch.uint8)
+
+    PAD = tag2id[DataConfig.PAD_TOKEN]
+
+    for i, l in enumerate(labels):
+        for j, e in enumerate(l):
+            if v_predict[i][j] < mentorConfig.predict_threshold:
+                bitmap[i, j, :] = 1
+            else:
+                bitmap[i, j, e] = 1
+
+        # fill pad token
+        bitmap[i, (j + 1):, PAD] = 1
+
+    return bitmap
+
