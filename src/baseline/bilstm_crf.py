@@ -24,6 +24,7 @@ class BiLstmCrf(nn.Module):
         # CRF实际上就是多学习一个转移矩阵 [out_size, out_size] 初始化为均匀分布
         self.transition = nn.Parameter(torch.ones(out_size, out_size) * 1/out_size)
 
+        self.features = None
         self.best_model = None
 
     def forward(self, sents_tensor, lengths):
@@ -35,6 +36,7 @@ class BiLstmCrf(nn.Module):
         # 这个矩阵第i行第j列的元素的含义是：上一时刻tag为i，这一时刻tag为j的分数
         batch_size, max_len, out_size = emission.size()
         crf_scores = emission.unsqueeze(2).expand(-1, -1, out_size, -1) + self.transition.unsqueeze(0)
+        self.features = self.bilstm.features
 
         return crf_scores
 
