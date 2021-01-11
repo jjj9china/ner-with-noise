@@ -10,7 +10,7 @@ import torch.optim as optim
 from copy import deepcopy
 
 
-from baseline import config as ModelConfig
+from partialcrf import config as ModelConfig
 from partialcrf.bilstm_partialcrf import BiLstmPartialCrf
 from preprocess.data import Data
 from preprocess.util import prepocess_data_for_lstmcrf
