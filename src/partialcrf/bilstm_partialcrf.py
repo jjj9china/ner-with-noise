@@ -95,8 +95,8 @@ class BiLstmPartialCrf(nn.Module):
         """计算BiLSTM-Partial-CRF模型的损失
 
         Args:
-            scores : list of [B, L, T], [T], [T, T], [T]
-            targets : [B, L]
+            scores : list of [B, L, T]
+            targets : [B, L, T]
         """
         emission = scores
         mask = torch.ones(targets.size(0), targets.size(1), dtype=torch.uint8, device=targets.device)
