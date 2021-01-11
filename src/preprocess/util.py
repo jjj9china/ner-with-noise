@@ -10,7 +10,8 @@ This module contains functions about data pre-process utils.
 """
 
 __all__ = ['get_masked_word', 'read_instance', 'generate_instance_with_gaz', 'build_pretrain_embedding',
-           'norm2one', 'load_pretrain_emb', 'invalid_word', 'prepocess_data_for_lstmcrf']
+           'norm2one', 'load_pretrain_emb', 'invalid_word', 'prepocess_data_for_lstmcrf', 
+           'load_mentor_data']
 
 
 def get_masked_word(word):
@@ -216,7 +217,7 @@ def build_pretrain_embedding(embedding_path: str, word_alphabet, embedd_dim=100,
             pretrain_emb[index, :] = np.random.uniform(-scale, scale, [1, embedd_dim])
             not_match += 1
     pretrained_size = len(embedd_dict)
-    logger.info("Embedding:\n     pretrain word:%s, prefect match:%s, case_match:%s, oov:%s, oov%%:%s"
+    logger.info("Embedding:\n     pretrain word:%s, prefect match:%s, case_match:%s, oov:%s, oov%%:%.5s"
                 % (pretrained_size, perfect_match, case_match, not_match, (not_match + 0.) / word_alphabet.size()))
     return pretrain_emb
 
@@ -274,3 +275,40 @@ def prepocess_data_for_lstmcrf(word_lists, tag_lists, test=False):
             tag_lists[i].append(DataConfig.END_TOKEN)
 
     return word_lists, tag_lists
+
+
+def load_mentor_data(path: str):
+    """data loader for MenotNet.
+    It has four columns: [word, noise-label, true-label, noise-or-not].
+    And:
+        noise-label: token origin label that might be noisy.
+        true-label: corrected token label.
+        noise-or-not: 0-1 label,
+        `0` when `noise-label == true-label`, `1` when `noise-label != true-label`
+    """
+    in_lines = open(path, 'r', encoding='utf-8').readlines()
+
+    sentences = []
+
+    words = []
+    s_labels = []  # origin noise-label (used for student)
+    m_labels = []  # noise-or-not, 0-1 label (used for mentor)
+
+    for line in in_lines:
+        if len(line) > 2:
+            pairs = line.strip().split()
+            word = pairs[0]
+            if DataConfig.word_masked and invalid_word(word, line.strip().split()):
+                word = DataConfig.MASK_TOKEN
+            words.append(word)
+            s_labels.append(pairs[1])
+            m_labels.append(pairs[4])
+        else:
+            if (DataConfig.MAX_SENTENCE_LENGTH < 0 or len(words) < DataConfig.MAX_SENTENCE_LENGTH) and len(words) > 0:
+                sentences.append([words, s_labels, m_labels])
+            words = []
+            s_labels = []
+            m_labels = []
+
+    return sentences
+
