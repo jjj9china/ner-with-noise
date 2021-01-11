@@ -176,7 +176,7 @@ class Data:
         self.label_alphabet.save(save_path, name='label')
 
     def build_pretrain_emb(self, emb_path: str, name: str):
-        self.logger.info("build %s pretrain emb..." % name)
+        self.logger.info("Build %s pretrain emb..." % name)
         if name == 'word':
             self.pretrain_word_embedding = build_pretrain_embedding(emb_path, self.word_alphabet,
                                                                     DataConfig.word_emb_dim,
