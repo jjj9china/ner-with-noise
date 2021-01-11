@@ -34,9 +34,10 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
     train_mentor_m_label = [data[2] for data in train_mentor_data]
     train_mentor_word, train_mentor_m_label, _ = sort_by_lengths(train_mentor_word, train_mentor_m_label)
 
-    # dev_mentor_word = [data[0] for data in dev_mentor_data]
-    # dev_mentor_s_label = [data[1] for data in dev_mentor_data]
-    # dev_mentor_m_label = [data[2] for data in dev_mentor_data]
+    dev_mentor_word = [data[0] for data in dev_mentor_data]
+    dev_mentor_s_label = [data[1] for data in dev_mentor_data]
+    dev_mentor_m_label = [data[2] for data in dev_mentor_data]
+    dev_mentor_word, dev_mentor_m_label, _ = sort_by_lengths(dev_mentor_word, dev_mentor_m_label)
 
     # 加载训练参数
     student_B = ModelConfig.student_batch_size
@@ -52,10 +53,12 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
 
     nepoch_no_iprv = 0
     for e in range(1, epoches + 1):
+        student.train()
+        mentor.train()
 
-        # ----------------
+        # -----------------
         # 1. Train student
-        # ----------------
+        # -----------------
         s_step = 0
         s_losses = 0.
         for ind in range(0, len(train_word_lists), student_B):
@@ -128,12 +131,20 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
                     e, m_step, total_step, 100. * m_step / total_step, m_losses / print_step))
                 m_losses = 0.
 
+        # 查看mentor在验证集上的效果
+        logger.info("Epoch {}, Evaluate Mentor in Dev.".format(e))
+        mentor_predict, mentor_label = mentor_validate(student, mentor, dev_mentor_word, dev_mentor_m_label,
+                                                       word2id, tag2id, mentor_B, device)
+        metrics = Metrics(mentor_label, mentor_predict, logger)
+        metrics.report_scores()
+        # metrics.report_confusion_matrix()
+
         # 每轮结束测试在验证集上的性能，保存最好的一个
         val_loss = validate(student, mentor, dev_word_lists, dev_tag_lists, word2id, tag2id, student_B, device)
         logger.info("Epoch {}, Val Loss:{:.4f}".format(e, val_loss))
 
         if val_loss < best_val_loss:
-            logger.info("Get best student model...")
+            logger.info("Get best student model.")
             student.best_model = deepcopy(student)
             best_val_loss = val_loss
         else:
@@ -174,7 +185,40 @@ def validate(student, mentor, dev_word_lists, dev_tag_lists, word2id, tag2id, ba
         return val_loss
 
 
-def model_test(student, word_lists, tag_lists, word2id, tag2id, device):
+def mentor_validate(student, mentor, dev_mentor_word, dev_mentor_m_label, word2id, tag2id, mentor_B, device):
+    student.eval()
+    mentor.eval()
+
+    mentor_predict = []
+    mentor_label = []
+    with torch.no_grad():
+        for ind in range(0, len(dev_mentor_word), mentor_B):
+            # 准备batch数据
+            batch_sents = dev_mentor_word[ind:ind + mentor_B]
+            batch_m_tags = dev_mentor_m_label[ind:ind + mentor_B]
+
+            tensorized_sents, lengths = tensorized_word(batch_sents, word2id)  # [batch, max_length]
+            tensorized_sents = tensorized_sents.to(device)
+            tensorized_m_targets, lengths = tensorized_label(batch_m_tags, {'0': 0, '1': 1, DataConfig.PAD_TOKEN: 2})
+            tensorized_m_targets = tensorized_m_targets.to(device)
+
+            # forward
+            _ = student(tensorized_sents, lengths)
+            features = student.features
+            v_predict = mentor(features)
+
+            PAD = 2
+            mask = (tensorized_m_targets != PAD)  # [B, L]
+            tensorized_m_targets = tensorized_m_targets[mask].tolist()  # get real target
+            v_predict = v_predict.squeeze(2).masked_select(mask).contiguous().view(-1).tolist()
+
+        mentor_label.append([str(l) for l in tensorized_m_targets])
+        mentor_predict.append(['0' if v < ModelConfig.predict_threshold else '1' for v in v_predict])
+
+    return mentor_label, mentor_predict
+
+
+def student_test(student, word_lists, tag_lists, word2id, tag2id, device):
     """返回最佳模型在测试集上的预测结果"""
     # 准备数据
     word_lists, tag_lists, indices = sort_by_lengths(word_lists, tag_lists)
@@ -265,7 +309,7 @@ def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_pat
     student = studentModel(vocab_size=vocab_size, out_size=out_size,
                            emb_size=ModelConfig.embedding_size, hidden_size=ModelConfig.hidden_size,
                            pretrain_word_embedding=data.pretrain_word_embedding).to(device)
-    mentor = mentorModel(input_dim=2*ModelConfig.hidden_size)
+    mentor = mentorModel(input_dim=2*ModelConfig.hidden_size).to(device)
 
     # ======== 3. 模型训练 ========
     logger.info("Training model.")
@@ -277,7 +321,7 @@ def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_pat
 
     # ======== 4. 模型评估 ========
     logger.info("Evaluating model.")
-    pred_tag_lists, test_tag_lists = model_test(student, test_word_lists, test_tag_lists, word2id, tag2id, device)
+    pred_tag_lists, test_tag_lists = student_test(student, test_word_lists, test_tag_lists, word2id, tag2id, device)
 
     metrics = Metrics(test_tag_lists, pred_tag_lists, logger, remove_O=True)
     metrics.report_scores()
