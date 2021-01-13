@@ -329,15 +329,22 @@ def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_pat
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_file', default='../data/train_demo.col')
-    parser.add_argument('--dev_file', default='../data/dev_demo.col')
-    parser.add_argument('--test_file', default='../data/test.col')
-    parser.add_argument('--mentor_file', default='../data/train_mentor.col')
-    parser.add_argument('--gaz_file', default='../data/wv_txt.txt')
+    parser.add_argument('--train_file', default='../data/train_demo.col',
+                        help='student train file. It might contain noise.')
+    parser.add_argument('--dev_file', default='../data/dev_demo.col',
+                        help='student dev file. It might contain noise.')
+    parser.add_argument('--test_file', default='../data/test.col',
+                        help='student test file. It does not contain noise!!!')
+    parser.add_argument('--mentor_file', default='../data/train_mentor.col',
+                        help='mentor train file. It at least has four columns: '
+                             '[word, noise-label, true-label, noise-or-not]. 1 when noise-label == true-label, '
+                             '0 when noise-label != true-label.')
+    parser.add_argument('--gaz_file', default='../data/wv_txt.txt', help='pre-trained w2v file.')
     parser.add_argument('--model_save_path', default='../saved_model/')
     parser.add_argument('--output_path', default='../data/output/')
     parser.add_argument('--log_path', default='../log/')
-    parser.add_argument('--pos_weight', default=1., type=float)
+    parser.add_argument('--pos_weight', default=1, type=float, help='used to cal mentor loss, because mentor label is'
+                                                                    'highly unbalanced.')
     args = parser.parse_args()
 
     train(args.train_file, args.dev_file, args.test_file, args.mentor_file, args.gaz_file,
