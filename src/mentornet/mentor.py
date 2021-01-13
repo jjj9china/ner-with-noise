@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2021-01-07
+# @Date:   2021-01-13
 
 import torch
 import torch.nn as nn
@@ -24,12 +24,37 @@ class MLP(nn.Module):
 
         self.best_model = None
 
-    def forward(self, x):
+    def forward(self, x, lengths):
+        """Forward process of model.
+
+        Args:
+            x: batch中每个word的features, [B, L]
+            lengths: 没有使用，为了和bilstm接口保持一致
+        """
         # x = x.view(-1, self.input_dim)
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)   # [B, L, 1]
         return x
+
+    def cal_loss(self, logits, targets, tag2id, pos_weight):
+        """计算损失
+
+        Args:
+            logits: [B, L, out_size]
+            targets: [B, L]
+            tag2id: dict
+            pos_weight: positive weight. Note that default positive class is normal one.
+        """
+        PAD = tag2id.get(DataConfig.PAD_TOKEN)
+        mask = (targets != PAD)  # [B, L]
+        targets = targets[mask]  # get real target
+        logits = logits.squeeze(2).masked_select(mask).contiguous().view(-1)
+
+        assert logits.size(0) == targets.size(0)
+        loss = F.binary_cross_entropy_with_logits(logits, targets.float(), pos_weight=pos_weight)
+
+        return loss
 
 
 class BiLstm(nn.Module):
@@ -72,25 +97,23 @@ class BiLstm(nn.Module):
 
         return batch_tagids
 
-    def cal_loss(self, logits, targets, tag2id):
+    def cal_loss(self, logits, targets, tag2id, pos_weight):
         """计算 BiLSTM 损失
 
         Args:
             logits: [B, L, out_size]
             targets: [B, L]
-            tag2id: dict
+            tag2id: dict,
+            pos_weight: positive weight. Note that default positive class is normal one.
         """
         PAD = tag2id.get(DataConfig.PAD_TOKEN)
         assert PAD is not None
 
         mask = (targets != PAD)  # [B, L]
         targets = targets[mask]  # get real target
-        out_size = logits.size(2)
-        logits = logits.masked_select(mask.unsqueeze(2).expand(-1, -1, out_size)
-                                      ).contiguous().view(-1, out_size)
-        # 展开后的logits [-1, out_size]
+        logits = logits.squeeze(2).masked_select(mask).contiguous().view(-1)
 
         assert logits.size(0) == targets.size(0)
-        loss = F.cross_entropy(logits, targets)
+        loss = F.binary_cross_entropy_with_logits(logits, targets.float(), pos_weight=pos_weight)
 
         return loss
