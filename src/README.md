@@ -1,7 +1,7 @@
-- **baseline**: basic NER models: bilstm and bilstm-crf.
-- **coteach**: [coteach model](https://arxiv.org/abs/1804.06872) (comming sone).
-- **crossweigh**: CrossWeigh model from [here](https://www.aclweb.org/anthology/D19-1519/).
-- **mentornet**: [MentorNet model](https://arxiv.org/abs/1712.05055) (comming sone).
-- **partialcrf**: Partial/Fuzzy-CRF model.
+- **Baseline**: basic NER models: bilstm and bilstm-crf.
+- **Coteach**: [coteach model](https://arxiv.org/abs/1804.06872) (comming sone).
+- **CrossWeigh**: CrossWeigh model from [here](https://www.aclweb.org/anthology/D19-1519/).
+- **MentorNet**: [MentorNet model](https://arxiv.org/abs/1712.05055).
+- **PartialCrf**: Partial/Fuzzy-CRF model.
 - **preprocess**: data preprocessing tools.
 - **utils**: tools in model train/test.
