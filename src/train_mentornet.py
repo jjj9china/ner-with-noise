@@ -117,7 +117,8 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
             tensorized_m_targets = tensorized_m_targets[mask]  # get real target
             v_predict = v_predict.squeeze(2).masked_select(mask).contiguous().view(-1)
             assert v_predict.size(0) == tensorized_m_targets.size(0)
-            m_loss = F.binary_cross_entropy(F.sigmoid(v_predict), tensorized_m_targets.float())
+            pos_weight = torch.tensor([0.5], dtype=torch.float32, device=device)
+            m_loss = F.binary_cross_entropy_with_logits(v_predict, tensorized_m_targets.float(), pos_weight=pos_weight)
 
             m_loss.backward()
             m_optimizer.step()
@@ -133,7 +134,7 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
 
         # 查看mentor在验证集上的效果
         logger.info("Epoch {}, Evaluate Mentor in Dev.".format(e))
-        mentor_predict, mentor_label = mentor_validate(student, mentor, dev_mentor_word, dev_mentor_m_label,
+        mentor_label, mentor_predict = mentor_validate(student, mentor, dev_mentor_word, dev_mentor_m_label,
                                                        word2id, tag2id, mentor_B, device)
         metrics = Metrics(mentor_label, mentor_predict, logger)
         metrics.report_scores()
@@ -212,8 +213,8 @@ def mentor_validate(student, mentor, dev_mentor_word, dev_mentor_m_label, word2i
             tensorized_m_targets = tensorized_m_targets[mask].tolist()  # get real target
             v_predict = v_predict.squeeze(2).masked_select(mask).contiguous().view(-1).tolist()
 
-        mentor_label.append([str(l) for l in tensorized_m_targets])
-        mentor_predict.append(['0' if v < ModelConfig.predict_threshold else '1' for v in v_predict])
+            mentor_label.append([str(l) for l in tensorized_m_targets])
+            mentor_predict.append(['0' if v < ModelConfig.predict_threshold else '1' for v in v_predict])
 
     return mentor_label, mentor_predict
 
