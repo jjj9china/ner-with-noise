@@ -8,11 +8,13 @@ NER任务作为NLP领域的一个基础任务，在神经网络大肆盛行的�
 
 本项目旨在帮助研究者或者开发者在面对**数据质量**问题时，提供一个简单易用的工具箱。
 
-本项目拟实现以下几种baseline.
-|method|paper|
-|:--:|:--|
-|Partical-CRF/Fuzzy-CRF|(2007 AAAI) [Learning extractors from unlabeled text using relevant databases](https://www.aaai.org/Papers/Workshops/2007/WS-07-14/WS07-14-002.pdf)|
-|Positive-Unlabeled Learning|(2019 ACL) [Distantly Supervised Named Entity Recognition using Positive Unlabeled Learning](https://arxiv.org/pdf/1906.01378.pdf)|
-|CrossWeigh|(2019 EMNLP) [CrossWeigh Training Named Entity Tagger from Imperfect Annotations](https://arxiv.org/pdf/1909.01441)|
-|Marginal Likelihood CRF|(2018 EMNLP) [Marginal Likelihood Training of BiLSTM-CRF for Biomedical Named Entity Recognition from Disjoint Label Sets](https://www.aclweb.org/anthology/D18-1306.pdf)|
+本项目实现以下几种相关方法：
+|NAME|PAPER|STATUS|
+|:--|:--|:--|
+|BiLSTM/BiLSTM-CRF|(Baseline Model) (2016 NAACL) [Architectures for Named Entity Recognition](https://arxiv.org/abs/1603.01360)|Done|
+|Partical-CRF/Fuzzy-CRF|(2007 AAAI) [Learning extractors from unlabeled text using relevant databases](https://www.aaai.org/Papers/Workshops/2007/WS-07-14/WS07-14-002.pdf)|Done|
+|MentorNet|(2018 ICML) [MentorNet: Learning Data-Driven Curriculum for Very Deep Neural Networks on Corrupted Labels](https://arxiv.org/abs/1712.05055)|Done|
+|Positive-Unlabeled Learning|(2019 ACL) [Distantly Supervised Named Entity Recognition using Positive Unlabeled Learning](https://arxiv.org/pdf/1906.01378.pdf)|Coming Soon|
+|CrossWeigh|(2019 EMNLP) [CrossWeigh Training Named Entity Tagger from Imperfect Annotations](https://arxiv.org/pdf/1909.01441)|Done|
+|Marginal Likelihood CRF|(2018 EMNLP) [Marginal Likelihood Training of BiLSTM-CRF for Biomedical Named Entity Recognition from Disjoint Label Sets](https://www.aclweb.org/anthology/D18-1306.pdf)|Coming Soon|
 
