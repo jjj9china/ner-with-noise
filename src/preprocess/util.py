@@ -279,12 +279,12 @@ def prepocess_data_for_lstmcrf(word_lists, tag_lists, test=False):
 
 def load_mentor_data(path: str):
     """data loader for MenotNet.
-    It has four columns: [word, noise-label, true-label, noise-or-not].
+    It at least has four columns: [word, noise-label, true-label, noise-or-not].
     And:
         noise-label: token origin label that might be noisy.
         true-label: corrected token label.
         noise-or-not: 0-1 label,
-        `0` when `noise-label == true-label`, `1` when `noise-label != true-label`
+        `1` when `noise-label == true-label`, `0` when `noise-label != true-label`
     """
     in_lines = open(path, 'r', encoding='utf-8').readlines()
 
@@ -297,12 +297,12 @@ def load_mentor_data(path: str):
     for line in in_lines:
         if len(line) > 2:
             pairs = line.strip().split()
-            word = pairs[0]
+            word = pairs[DataConfig.mentor_word_col]
             if DataConfig.word_masked and invalid_word(word, line.strip().split()):
                 word = DataConfig.MASK_TOKEN
             words.append(word)
-            s_labels.append(pairs[1])
-            m_labels.append(pairs[4])
+            s_labels.append(pairs[DataConfig.mentor_noise_label_col])
+            m_labels.append(pairs[DataConfig.mentor_label_col])
         else:
             if (DataConfig.MAX_SENTENCE_LENGTH < 0 or len(words) < DataConfig.MAX_SENTENCE_LENGTH) and len(words) > 0:
                 sentences.append([words, s_labels, m_labels])
