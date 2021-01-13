@@ -16,3 +16,5 @@
 3. 引入多标签：根据模型投票结果，对高出某个阈值的词语的标签(token)，标记为多个标签`raw_tag -> raw_tag|tag1|...`。
 4. 引入未知标签：根据模型投票结果，对高出某个阈值的词语的标签(token)，标记为未知标签`raw_tag -> unknown_tag`。
 
+### 使用
+具体使用方法请见`train_crossweigh.sh`
