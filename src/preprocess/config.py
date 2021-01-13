@@ -52,4 +52,9 @@ IMPOSSIBLE_SCORE = -10000000.0
 word_col = 0
 label_col = -1
 
+mentor_word_col = 0
+mentor_noise_label_col = 2  # origin noise-label
+mentor_true_label_col = 3   # corrected label by human
+mentor_label_col = 4   # noise-label and true-label equal or not
+
 alphabet_save_path = '../data/dic/'
