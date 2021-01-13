@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2020-01-11
+# @Date:   2020-01-13
 
 import os
 import time
@@ -23,7 +23,7 @@ from utils.util import *
 
 
 def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lists, dev_tag_lists,
-                train_mentor_data, dev_mentor_data, word2id, tag2id, device, logger):
+                train_mentor_data, dev_mentor_data, word2id, tag2id, device, pos_weight, logger):
     # 对数据集按照长度进行排序
     train_word_lists, train_tag_lists, _ = sort_by_lengths(train_word_lists, train_tag_lists)
     dev_word_lists, dev_tag_lists, _ = sort_by_lengths(dev_word_lists, dev_tag_lists)
@@ -73,7 +73,7 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
             s_optimizer.zero_grad()
             scores = student(tensorized_sents, lengths)
             features = student.features
-            v_predict = F.sigmoid(mentor(features).detach())  # 切断mentor的梯度回传
+            v_predict = F.sigmoid(mentor(features, lengths).detach())  # 切断mentor的梯度回传
             tag_bitmap = get_tag_bitmap(tensorized_sents, tensorized_targets, v_predict, tag2id)
             tag_bitmap = tag_bitmap.to(device)
 
@@ -104,21 +104,17 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
             tensorized_sents = tensorized_sents.to(device)
             # tensorized_s_targets, lengths = tensorized_label(batch_s_tags, tag2id)
             # tensorized_s_targets = tensorized_s_targets.to(device)
-            tensorized_m_targets, lengths = tensorized_label(batch_m_tags, {'0': 0, '1': 1, DataConfig.PAD_TOKEN: 2})
+            mentor_tag2id = {'0': 0, '1': 1, DataConfig.PAD_TOKEN: 2}  # 将mentor训练数据的标签进行转化的时候，默认0为噪声类，1为正常类，2为填充
+            tensorized_m_targets, lengths = tensorized_label(batch_m_tags, mentor_tag2id)
             tensorized_m_targets = tensorized_m_targets.to(device)
 
             m_optimizer.zero_grad()
             _ = student(tensorized_sents, lengths)
             features = student.features.detach()  # 切断student的梯度回传
-            v_predict = mentor(features)
+            v_predict = mentor(features, lengths)
 
-            PAD = 2
-            mask = (tensorized_m_targets != PAD)  # [B, L]
-            tensorized_m_targets = tensorized_m_targets[mask]  # get real target
-            v_predict = v_predict.squeeze(2).masked_select(mask).contiguous().view(-1)
-            assert v_predict.size(0) == tensorized_m_targets.size(0)
-            pos_weight = torch.tensor([0.5], dtype=torch.float32, device=device)
-            m_loss = F.binary_cross_entropy_with_logits(v_predict, tensorized_m_targets.float(), pos_weight=pos_weight)
+            pos_weight_tensor = torch.tensor(pos_weight, dtype=torch.float32, device=device)
+            m_loss = mentor.cal_loss(v_predict, tensorized_m_targets, mentor_tag2id, pos_weight_tensor).to(device)
 
             m_loss.backward()
             m_optimizer.step()
@@ -174,7 +170,7 @@ def validate(student, mentor, dev_word_lists, dev_tag_lists, word2id, tag2id, ba
             # forward
             scores = student(tensorized_sents, lengths)
             features = student.features
-            v_predict = F.sigmoid(mentor(features))
+            v_predict = F.sigmoid(mentor(features, lengths))
             tag_bitmap = get_tag_bitmap(tensorized_sents, tensorized_targets, v_predict, tag2id)
             tag_bitmap = tag_bitmap.to(device)
 
@@ -206,7 +202,7 @@ def mentor_validate(student, mentor, dev_mentor_word, dev_mentor_m_label, word2i
             # forward
             _ = student(tensorized_sents, lengths)
             features = student.features
-            v_predict = mentor(features)
+            v_predict = mentor(features, lengths)
 
             PAD = 2
             mask = (tensorized_m_targets != PAD)  # [B, L]
@@ -253,7 +249,7 @@ def student_test(student, word_lists, tag_lists, word2id, tag2id, device):
     return pred_tag_lists, tag_lists
 
 
-def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_path, output_path, log_path):
+def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_path, output_path, log_path, pos_weight):
     """Train model in train-data, evaluate it in dev-data, and finally test it in test-data
 
     Args:
@@ -265,6 +261,7 @@ def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_pat
         model_save_path:
         output_path: Predict file path.
         log_path:
+        pos_weight: mentor positive class weight. Note that default positive class is normal one.
     """
     current_time = time.strftime('%Y%m%d%H%M', time.localtime(time.time()))
     logger = get_logger(os.path.join(log_path, current_time + '-mentornet.log'))
@@ -315,7 +312,7 @@ def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_pat
     # ======== 3. 模型训练 ========
     logger.info("Training model.")
     model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lists, dev_tag_lists,
-                train_mentor_data, dev_mentor_data, word2id, tag2id, device, logger)
+                train_mentor_data, dev_mentor_data, word2id, tag2id, device, pos_weight, logger)
 
     save_model(student, os.path.join(model_save_path, 'mentornet-model.pkl'))
     logger.info("train done, time consuming {} s.".format(int(time.time() - start)))
@@ -340,8 +337,9 @@ if __name__ == "__main__":
     parser.add_argument('--model_save_path', default='../saved_model/')
     parser.add_argument('--output_path', default='../data/output/')
     parser.add_argument('--log_path', default='../log/')
+    parser.add_argument('--pos_weight', default=1., type=float)
     args = parser.parse_args()
 
     train(args.train_file, args.dev_file, args.test_file, args.mentor_file, args.gaz_file,
-          args.model_save_path, args.output_path, args.log_path)
+          args.model_save_path, args.output_path, args.log_path, args.pos_weight)
 
