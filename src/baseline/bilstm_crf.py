@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2020-12-29
+# @Date:   2020-01-16
+
+from typing import Optional
 
 import torch
 import torch.nn as nn
-from itertools import zip_longest
 
 from baseline.bilstm import BiLstm
-from preprocess import config as DataConfig
 
 
 class BiLstmCrf(nn.Module):
@@ -21,8 +21,9 @@ class BiLstmCrf(nn.Module):
         super(BiLstmCrf, self).__init__()
         self.bilstm = BiLstm(vocab_size, out_size, emb_size, hidden_size, pretrain_word_embedding)
 
-        # CRF实际上就是多学习一个转移矩阵 [out_size, out_size] 初始化为均匀分布
-        self.transition = nn.Parameter(torch.ones(out_size, out_size) * 1/out_size)
+        self.start_transitions = nn.Parameter(torch.randn(out_size))
+        self.end_transitions = nn.Parameter(torch.randn(out_size))
+        self.transitions = nn.Parameter(torch.ones(out_size, out_size) * 1 / out_size)
 
         self.features = None
         self.best_model = None
@@ -30,161 +31,221 @@ class BiLstmCrf(nn.Module):
     def forward(self, sents_tensor, lengths):
         # [B, L, out_size]
         emission = self.bilstm(sents_tensor, lengths)
-
-        # 计算CRF scores, 这个scores大小为[B, L, out_size, out_size]
-        # 也就是每个字对应对应一个 [out_size, out_size]的矩阵
-        # 这个矩阵第i行第j列的元素的含义是：上一时刻tag为i，这一时刻tag为j的分数
-        batch_size, max_len, out_size = emission.size()
-        crf_scores = emission.unsqueeze(2).expand(-1, -1, out_size, -1) + self.transition.unsqueeze(0)
         self.features = self.bilstm.features
 
-        return crf_scores
+        return emission
 
-    def test(self, test_sents_tensor, lengths, tag2id):
+    def test(self, test_sents_tensor, lengths, mask: Optional[torch.ByteTensor] = None):
         """使用维特比算法进行解码"""
-        start_id = tag2id[DataConfig.START_TOKEN]
-        end_id = tag2id[DataConfig.END_TOKEN]
-        pad = tag2id[DataConfig.PAD_TOKEN]
-        tagset_size = len(tag2id)
+        scores = self.forward(test_sents_tensor, lengths)
+        emission = scores
+        batch_size, sequence_length, _ = emission.shape
+        if mask is None:
+            mask = torch.ones([batch_size, sequence_length], dtype=torch.uint8, device=emission.device)
 
-        crf_scores = self.forward(test_sents_tensor, lengths)
-        device = crf_scores.device
-        # B:batch_size, L:max_len, T:target set size
-        B, L, T, _ = crf_scores.size()
-        # viterbi[i, j, k]表示第i个句子，第j个字对应第k个标记的最大分数
-        viterbi = torch.zeros(B, L, T).to(device)
-        # backpointer[i, j, k]表示第i个句子，第j个字对应第k个标记时前一个标记的id，用于回溯
-        backpointer = (torch.zeros(B, L, T).long() * end_id).to(device)
-        lengths = torch.LongTensor(lengths).to(device)
-        # 向前递推
-        for step in range(L):
-            batch_size_t = (lengths > step).sum().item()
-            if step == 0:
-                # 第一个字它的前一个标记只能是start_id
-                viterbi[:batch_size_t, step,
-                        :] = crf_scores[: batch_size_t, step, start_id, :]
-                backpointer[: batch_size_t, step, :] = start_id
-            else:
-                max_scores, prev_tags = torch.max(
-                    viterbi[:batch_size_t, step-1, :].unsqueeze(2) +
-                    crf_scores[:batch_size_t, step, :, :],     # [B, T, T]
-                    dim=1
-                )
-                viterbi[:batch_size_t, step, :] = max_scores
-                backpointer[:batch_size_t, step, :] = prev_tags
+        emissions = emission.transpose(0, 1).contiguous()
+        mask = mask.transpose(0, 1).contiguous()
 
-        # 在回溯的时候我们只需要用到backpointer矩阵
-        backpointer = backpointer.view(B, -1)  # [B, L * T]
-        best_tags_list = []  # 存放结果
-        tags_t = None
-        for step in range(L-1, 0, -1):
-            batch_size_t = (lengths > step).sum().item()
-            if step == L-1:
-                index = torch.ones(batch_size_t).long() * (step * tagset_size)
-                index = index.to(device)
-                index += end_id
-            else:
-                prev_batch_size_t = len(tags_t)
+        # Start transition and first emission
+        # shape: (batch_size, num_tags)
+        score = self.start_transitions + emissions[0]
+        history = []
 
-                new_in_batch = torch.LongTensor([end_id] * (batch_size_t - prev_batch_size_t)).to(device)
-                offset = torch.cat([tags_t, new_in_batch], dim=0)  # 这个offset实际上就是前一时刻的
-                index = torch.ones(batch_size_t).long() * (step * tagset_size)
-                index = index.to(device)
-                index += offset.long()
+        # score is a tensor of size (batch_size, num_tags) where for every batch,
+        # value at column j stores the score of the best tag sequence so far that ends
+        # with tag j
+        # history saves where the best tags candidate transitioned from; this is used
+        # when we trace back the best tag sequence
 
-            try:
-                tags_t = backpointer[:batch_size_t].gather(dim=1, index=index.unsqueeze(1).long())
-            except RuntimeError:
-                import pdb
-                pdb.set_trace()
-            tags_t = tags_t.squeeze(1)
-            best_tags_list.append(tags_t.tolist())
+        # Viterbi algorithm recursive case: we compute the score of the best tag sequence
+        # for every possible next tag
+        for i in range(1, sequence_length):
+            # Broadcast viterbi score for every possible next tag
+            # shape: (batch_size, num_tags, 1)
+            broadcast_score = score.unsqueeze(2)
 
-        # best_tags_list:[L-1]（L-1是因为扣去了end_token),大小的liebiao
-        # 其中列表内的元素是该batch在该时刻的标记
-        # 下面修正其顺序，并将维度转换为 [B, L]
-        best_tags_list = list(zip_longest(*reversed(best_tags_list), fillvalue=pad))
+            # Broadcast emission score for every possible current tag
+            # shape: (batch_size, 1, num_tags)
+            broadcast_emission = emissions[i].unsqueeze(1)
+
+            # Compute the score tensor of size (batch_size, num_tags, num_tags) where
+            # for each sample, entry at row i and column j stores the score of the best
+            # tag sequence so far that ends with transitioning from tag i to tag j and emitting
+            # shape: (batch_size, num_tags, num_tags)
+            next_score = broadcast_score + self.transitions + broadcast_emission
+
+            # Find the maximum score over all possible current tag
+            # shape: (batch_size, num_tags)
+            next_score, indices = next_score.max(dim=1)
+
+            # Set score to the next score if this timestep is valid (mask == 1)
+            # and save the index that produces the next score
+            # shape: (batch_size, num_tags)
+            score = torch.where(mask[i].unsqueeze(1), next_score, score)
+            history.append(indices)
+
+        # End transition score
+        # shape: (batch_size, num_tags)
+        score += self.end_transitions
+
+        # Now, compute the best path for each sample
+
+        # shape: (batch_size,)
+        seq_ends = mask.long().sum(dim=0) - 1
+        best_tags_list = []
+
+        for idx in range(batch_size):
+            # Find the tag which maximizes the score at the last timestep; this is our best tag
+            # for the last timestep
+            _, best_last_tag = score[idx].max(dim=0)
+            best_tags = [best_last_tag.item()]
+
+            # We trace back where the best last tag comes from, append that to our best tag
+            # sequence, and trace it back again, and so on
+            for hist in reversed(history[:seq_ends[idx]]):
+                best_last_tag = hist[idx][best_tags[-1]]
+                best_tags.append(best_last_tag.item())
+
+            # Reverse the order because we start from the last timestep
+            best_tags.reverse()
+            best_tags_list.append(best_tags)
+
         best_tags_list = torch.Tensor(best_tags_list).long()
 
-        # 返回解码的结果
         return best_tags_list
 
-    def cal_loss(self, crf_scores, targets, tag2id):
+    def cal_loss(self, scores, targets,
+                 mask: Optional[torch.ByteTensor] = None,
+                 reduction: str = 'sum'):
         """计算BiLSTM-CRF模型的损失。
         该损失函数的计算可以参考:https://arxiv.org/pdf/1603.01360.pdf
 
         Args:
-            crf_scores : [B, L, T, T]
+            scores : [B, L, T, T]
             targets : [B, L]
-            tag2id : [T]
+            mask : [B, L]
+            reduction (string, optional): Specifies the reduction to apply to the output:
+            ``'none'`` | ``'mean'`` | ``'sum'``. ``'none'``: no reduction will be applied,
+            ``'mean'``: the sum of the output will be divided by the number of
+            elements in the output, ``'sum'``: the output will be summed. Default: ``'sum'``
         """
-        pad_id = tag2id.get(DataConfig.PAD_TOKEN)
-        start_id = tag2id.get(DataConfig.START_TOKEN)
-        end_id = tag2id.get(DataConfig.END_TOKEN)
+        if reduction not in ('none', 'sum', 'mean'):
+            raise ValueError(f'invalid reduction: {reduction}')
+        emission = scores
+        if mask is None:
+            mask = torch.ones(targets.size(0), targets.size(1), dtype=torch.uint8, device=targets.device)
+        gold_score = self._numerator_score(emission, targets, mask)
+        forward_score = self._denominator_score(emission, mask)
 
-        device = crf_scores.device
-
-        # targets:[B, L] crf_scores:[B, L, T, T]
-        batch_size, max_len = targets.size()
-        target_size = len(tag2id)
-
-        # mask = 1 - ((targets == pad_id) + (targets == end_id))  # [B, L]
-        mask = (targets != pad_id)
-        lengths = mask.sum(dim=1)
-        targets = self._indexed(targets, target_size, start_id)
-
-        # # 计算Golden scores方法１
-        # import pdb
-        # pdb.set_trace()
-        targets = targets.masked_select(mask)  # [real length]
-
-        flatten_scores = crf_scores.masked_select(
-            mask.view(batch_size, max_len, 1, 1).expand_as(crf_scores)
-        ).view(-1, target_size*target_size).contiguous()
-
-        # 计算bilstm loss
-        golden_scores = flatten_scores.gather(
-            dim=1, index=targets.unsqueeze(1)).sum()
-
-        # 计算golden_scores方法２：利用pack_padded_sequence函数
-        # targets[targets == end_id] = pad_id
-        # scores_at_targets = torch.gather(
-        #     crf_scores.view(batch_size, max_len, -1), 2, targets.unsqueeze(2)).squeeze(2)
-        # scores_at_targets, _ = pack_padded_sequence(
-        #     scores_at_targets, lengths-1, batch_first=True
-        # )
-        # golden_scores = scores_at_targets.sum()
-
-        # 计算all path scores
-        # scores_upto_t[i, j]表示第i个句子的第t个词被标注为j标记的所有t时刻之前的所有子路径的分数之和
-        scores_upto_t = torch.zeros(batch_size, target_size).to(device)
-        for t in range(max_len):
-            # 当前时刻 有效的batch_size（因为有些序列比较短)
-            batch_size_t = (lengths > t).sum().item()
-            if t == 0:
-                scores_upto_t[:batch_size_t] = crf_scores[:batch_size_t, t, start_id, :]
-            else:
-                # We add scores at current timestep to scores accumulated up to previous
-                # timestep, and log-sum-exp Remember, the cur_tag of the previous
-                # timestep is the prev_tag of this timestep
-                # So, broadcast prev. timestep's cur_tag scores
-                # along cur. timestep's cur_tag dimension
-                scores_upto_t[:batch_size_t] = torch.logsumexp(
-                    crf_scores[:batch_size_t, t, :, :] +
-                    scores_upto_t[:batch_size_t].unsqueeze(2),
-                    dim=1
-                )
-        all_path_scores = scores_upto_t[:, end_id].sum()
-
-        # 从数学的角度上来说，loss = -logP
-        loss = (all_path_scores - golden_scores) / batch_size
-        return loss
+        if reduction == 'none':
+            return forward_score - gold_score
+        elif reduction == 'mean':
+            return torch.mean(forward_score - gold_score)
+        else:
+            return torch.sum(forward_score - gold_score)
 
     """=========bilstm-crf tools========="""
-    def _indexed(self, targets, tagset_size, start_id):
-        """将targets中的数转化为在[T*T]大小序列中的索引,T是标注的种类"""
-        batch_size, max_len = targets.size()
-        for col in range(max_len-1, 0, -1):
-            targets[:, col] += (targets[:, col-1] * tagset_size)
-        targets[:, 0] += (start_id * tagset_size)
-        return targets
+    def _denominator_score(self, emissions: torch.Tensor,
+                           mask: torch.ByteTensor) -> torch.Tensor:
+        """
+        Parameters:
+            emissions: (batch_size, sequence_length, num_tags)
+            mask: Show padding tags. 0 don't calculate score. (batch_size, sequence_length)
+        Returns:
+            scores: (batch_size)
+        """
+        emissions = emissions.transpose(0, 1).contiguous()
+        mask = mask.transpose(0, 1).contiguous()
+        assert emissions.dim() == 3 and mask.dim() == 2
+        assert emissions.shape[:2] == mask.shape
+        # assert emissions.size(2) == self.out_size
+        assert mask[0].all()
+
+        seq_length = emissions.size(0)
+
+        # Start transition score and first emission; score has size of
+        # (batch_size, num_tags) where for each batch, the j-th column stores
+        # the score that the first timestep has tag j
+        # shape: (batch_size, num_tags)
+        score = self.start_transitions + emissions[0]
+
+        for i in range(1, seq_length):
+            # Broadcast score for every possible next tag
+            # shape: (batch_size, num_tags, 1)
+            broadcast_score = score.unsqueeze(2)
+
+            # Broadcast emission score for every possible current tag
+            # shape: (batch_size, 1, num_tags)
+            broadcast_emissions = emissions[i].unsqueeze(1)
+
+            # Compute the score tensor of size (batch_size, num_tags, num_tags) where
+            # for each sample, entry at row i and column j stores the sum of scores of all
+            # possible tag sequences so far that end with transitioning from tag i to tag j
+            # and emitting
+            # shape: (batch_size, num_tags, num_tags)
+            next_score = broadcast_score + self.transitions + broadcast_emissions
+
+            # Sum over all possible current tags, but we're in score space, so a sum
+            # becomes a log-sum-exp: for each sample, entry i stores the sum of scores of
+            # all possible tag sequences so far, that end in tag i
+            # shape: (batch_size, num_tags)
+            next_score = torch.logsumexp(next_score, dim=1)
+
+            # Set score to the next score if this timestep is valid (mask == 1)
+            # shape: (batch_size, num_tags)
+            score = torch.where(mask[i].unsqueeze(1), next_score, score)
+
+        # End transition score
+        # shape: (batch_size, num_tags)
+        score += self.end_transitions
+
+        # Sum (log-sum-exp) over all possible tags
+        # shape: (batch_size,)
+        return torch.logsumexp(score, dim=1)
+
+    def _numerator_score(self, emissions: torch.Tensor,
+                         tags: torch.LongTensor,
+                         mask: torch.ByteTensor) -> torch.Tensor:
+        """
+        Parameters:
+            emissions: (batch_size, sequence_length, num_tags)
+            tags:  (batch_size, sequence_length)
+            mask:  Show padding tags. 0 don't calculate score. (batch_size, sequence_length)
+        Returns:
+            scores: (batch_size)
+        """
+        emissions = emissions.transpose(0, 1).contiguous()
+        tags = tags.transpose(0, 1).contiguous()
+        mask = mask.transpose(0, 1).contiguous()
+        assert emissions.dim() == 3 and tags.dim() == 2
+        assert emissions.shape[:2] == tags.shape
+        # assert emissions.size(2) == self.out_size
+        assert mask.shape == tags.shape
+        assert mask[0].all()
+
+        seq_length, batch_size = tags.shape
+        mask = mask.float()
+
+        # Start transition score and first emission
+        # shape: (batch_size,)
+        score = self.start_transitions[tags[0]]
+        score += emissions[0, torch.arange(batch_size), tags[0]]
+
+        for i in range(1, seq_length):
+            # Transition score to next tag, only added if next timestep is valid (mask == 1)
+            # shape: (batch_size,)
+            score += self.transitions[tags[i - 1], tags[i]] * mask[i]
+
+            # Emission score for next tag, only added if next timestep is valid (mask == 1)
+            # shape: (batch_size,)
+            score += emissions[i, torch.arange(batch_size), tags[i]] * mask[i]
+
+        # End transition score
+        # shape: (batch_size,)
+        seq_ends = mask.long().sum(dim=0) - 1
+        # shape: (batch_size,)
+        last_tags = tags[seq_ends, torch.arange(batch_size)]
+        # shape: (batch_size,)
+        score += self.end_transitions[last_tags]
+
+        return score
