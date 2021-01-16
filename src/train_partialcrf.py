@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2020-12-30
+# @Date:   2020-01-16
 
 import os
 import time
@@ -9,10 +9,10 @@ import torch
 import torch.optim as optim
 from copy import deepcopy
 
-
 from partialcrf import config as ModelConfig
 from partialcrf.bilstm_partialcrf import BiLstmPartialCrf
 from preprocess.data import Data
+from preprocess import config as DataConfig
 from preprocess.util import prepocess_data_for_lstmcrf
 from utils.metric import Metrics
 from utils.util import *
@@ -73,7 +73,12 @@ def train_step(model, optimizer, batch_sents, batch_tags, word2id, tag2id, devic
     tensorized_sents, lengths = tensorized_word(batch_sents, word2id)  # [batch, max_length]
     tensorized_sents = tensorized_sents.to(device)
     targets, lengths = tensorized_label(batch_tags, tag2id, partial_crf=True)
+    _targets, _ = tensorized_label(batch_tags, tag2id)  # used to get mask
     targets = targets.to(device)
+
+    # get mask
+    PAD = tag2id.get(DataConfig.PAD_TOKEN)
+    mask = (_targets != PAD).to(device)  # [B, L]
 
     # forward
     # scores size in bilstm: [B, L, out_size]
@@ -82,7 +87,7 @@ def train_step(model, optimizer, batch_sents, batch_tags, word2id, tag2id, devic
 
     # 计算损失 更新参数
     optimizer.zero_grad()
-    loss = model.cal_loss(scores, targets).to(device)
+    loss = model.cal_loss(scores, targets, mask).to(device)
     loss.backward()
     optimizer.step()
 
@@ -102,13 +107,18 @@ def validate(model, dev_word_lists, dev_tag_lists, word2id, tag2id, batch_size, 
             tensorized_sents, lengths = tensorized_word(batch_sents, word2id)
             tensorized_sents = tensorized_sents.to(device)
             targets, lengths = tensorized_label(batch_tags, tag2id, partial_crf=True)
+            _targets, _ = tensorized_label(batch_tags, tag2id)  # used to get mask
             targets = targets.to(device)
+
+            # get mask
+            PAD = tag2id.get(DataConfig.PAD_TOKEN)
+            mask = (_targets != PAD).to(device)  # [B, L]
 
             # forward
             scores = model(tensorized_sents, lengths)
 
             # 计算损失
-            loss = model.cal_loss(scores, targets).to(device)
+            loss = model.cal_loss(scores, targets, mask).to(device)
             val_losses += loss.item()
         val_loss = val_losses / val_step
 
@@ -222,14 +232,13 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, output_pat
 
 
 if __name__ == "__main__":
-    # We assume that the train/dev are modified-data which have `multi-tag` or `unkown-tag` in its label column.
-    # If you offer raw-data(all str in label column are valid label), this script will run like bilstm-crf model.
-    # If you do not have modified-data, you can run `split.py` and `collect.py` in **crossweigh** folder to get modified-data.
-    # More detail about crossweigh, please move to **crossweigh** folder.
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_file', default='../data/train_demo.col')
-    parser.add_argument('--dev_file', default='../data/dev_demo.col')
-    parser.add_argument('--test_file', default='../data/test.col')
+    parser.add_argument('--train_file', default='../data/train.col',
+                        help='student train file. It might contain noise.')
+    parser.add_argument('--dev_file', default='../data/dev.col',
+                        help='student dev file. It might contain noise.')
+    parser.add_argument('--test_file', default='../data/test.col',
+                        help='student test file. It might contain noise.')
     parser.add_argument('--gaz_file', default='../data/wv_txt.txt')
     parser.add_argument('--model_save_path', default='../saved_model/')
     parser.add_argument('--output_path', default='../data/output/')
