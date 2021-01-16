@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2020-01-13
+# @Date:   2021-01-16
 
 import os
 import time
@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 
 from mentornet import config as ModelConfig
 from mentornet.student import BiLstmPartialCrf as studentModel
-from mentornet.mentor import MLP as mentorModel
+from mentornet.mentor import BiLstm as mentorModel
 from preprocess.data import Data
 from preprocess import config as DataConfig
 from preprocess.util import prepocess_data_for_lstmcrf, load_mentor_data
@@ -70,6 +70,10 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
             tensorized_targets, lengths = tensorized_label(batch_tags, tag2id)
             tensorized_targets = tensorized_targets.to(device)
 
+            # get mask
+            PAD = tag2id.get(DataConfig.PAD_TOKEN)
+            mask = (tensorized_targets != PAD)  # [B, L]
+
             s_optimizer.zero_grad()
             scores = student(tensorized_sents, lengths)
             features = student.features
@@ -77,7 +81,7 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
             tag_bitmap = get_tag_bitmap(tensorized_sents, tensorized_targets, v_predict, tag2id)
             tag_bitmap = tag_bitmap.to(device)
 
-            s_loss = student.cal_loss(scores, tag_bitmap).to(device)
+            s_loss = student.cal_loss(scores, tag_bitmap, mask).to(device)
             s_loss.backward()
             s_optimizer.step()
 
@@ -108,13 +112,17 @@ def model_train(student, mentor, train_word_lists, train_tag_lists, dev_word_lis
             tensorized_m_targets, lengths = tensorized_label(batch_m_tags, mentor_tag2id)
             tensorized_m_targets = tensorized_m_targets.to(device)
 
+            # get mentor mask
+            m_PAD = mentor_tag2id.get(DataConfig.PAD_TOKEN)
+            m_mask = (tensorized_m_targets != m_PAD)
+
             m_optimizer.zero_grad()
             _ = student(tensorized_sents, lengths)
             features = student.features.detach()  # 切断student的梯度回传
             v_predict = mentor(features, lengths)
 
             pos_weight_tensor = torch.tensor(pos_weight, dtype=torch.float32, device=device)
-            m_loss = mentor.cal_loss(v_predict, tensorized_m_targets, mentor_tag2id, pos_weight_tensor).to(device)
+            m_loss = mentor.cal_loss(v_predict, tensorized_m_targets, m_mask, pos_weight_tensor).to(device)
 
             m_loss.backward()
             m_optimizer.step()
@@ -167,6 +175,10 @@ def validate(student, mentor, dev_word_lists, dev_tag_lists, word2id, tag2id, ba
             tensorized_targets, lengths = tensorized_label(batch_tags, tag2id)
             tensorized_targets = tensorized_targets.to(device)
 
+            # get mask
+            PAD = tag2id.get(DataConfig.PAD_TOKEN)
+            mask = (tensorized_targets != PAD)  # [B, L]
+
             # forward
             scores = student(tensorized_sents, lengths)
             features = student.features
@@ -174,7 +186,7 @@ def validate(student, mentor, dev_word_lists, dev_tag_lists, word2id, tag2id, ba
             tag_bitmap = get_tag_bitmap(tensorized_sents, tensorized_targets, v_predict, tag2id)
             tag_bitmap = tag_bitmap.to(device)
 
-            s_loss = student.cal_loss(scores, tag_bitmap).to(device)
+            s_loss = student.cal_loss(scores, tag_bitmap, mask).to(device)
 
             val_losses += s_loss.item()
         val_loss = val_losses / val_step
@@ -196,7 +208,8 @@ def mentor_validate(student, mentor, dev_mentor_word, dev_mentor_m_label, word2i
 
             tensorized_sents, lengths = tensorized_word(batch_sents, word2id)  # [batch, max_length]
             tensorized_sents = tensorized_sents.to(device)
-            tensorized_m_targets, lengths = tensorized_label(batch_m_tags, {'0': 0, '1': 1, DataConfig.PAD_TOKEN: 2})
+            mentor_tag2id = {'0': 0, '1': 1, DataConfig.PAD_TOKEN: 2}  # 将mentor训练数据的标签进行转化的时候，默认0为噪声类，1为正常类，2为填充
+            tensorized_m_targets, lengths = tensorized_label(batch_m_tags, mentor_tag2id)
             tensorized_m_targets = tensorized_m_targets.to(device)
 
             # forward
@@ -329,9 +342,9 @@ def train(train_file, dev_file, test_file, mentor_file, gaz_file, model_save_pat
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_file', default='../data/train_demo.col',
+    parser.add_argument('--train_file', default='../data/train.col',
                         help='student train file. It might contain noise.')
-    parser.add_argument('--dev_file', default='../data/dev_demo.col',
+    parser.add_argument('--dev_file', default='../data/dev.col',
                         help='student dev file. It might contain noise.')
     parser.add_argument('--test_file', default='../data/test.col',
                         help='student test file. It does not contain noise!!!')
