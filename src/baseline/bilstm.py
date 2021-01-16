@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2020-12-29
+# @Date:   2020-01-16
+
+from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-
-from preprocess import config as DataConfig
 
 
 class BiLstm(nn.Module):
@@ -55,31 +55,35 @@ class BiLstm(nn.Module):
 
         return scores
 
-    def test(self, sents_tensor, lengths, _):
-        """第三个参数不会用到，加它是为了与BiLSTM_CRF保持同样的接口"""
+    def test(self, sents_tensor, lengths):
         logits = self.forward(sents_tensor, lengths)  # [B, L, out_size]
         _, batch_tagids = torch.max(logits, dim=2)
 
         return batch_tagids
 
-    def cal_loss(self, logits, targets, tag2id):
+    def cal_loss(self, logits, targets,
+                 mask: Optional[torch.ByteTensor] = None,
+                 reduction: str = 'sum'):
         """计算BiLSTM损失
         参数:
             logits: [B, L, out_size]
             targets: [B, L]
-            lengths: [B]
+            mask: [B, L]
         """
-        PAD = tag2id.get(DataConfig.PAD_TOKEN)
-        assert PAD is not None
-
-        mask = (targets != PAD)  # [B, L]
+        if reduction not in ('none', 'sum', 'mean'):
+            raise ValueError(f'invalid reduction: {reduction}')
         targets = targets[mask]  # get real target
         out_size = logits.size(2)
         logits = logits.masked_select(mask.unsqueeze(2).expand(-1, -1, out_size)).contiguous().view(-1, out_size)
         # 展开后的logits [-1, out_size]
 
         assert logits.size(0) == targets.size(0)
-        loss = F.cross_entropy(logits, targets)
+        if reduction == 'none':
+            loss = F.cross_entropy(logits, targets, reduction=reduction)
+        elif reduction == 'mean':
+            loss = F.cross_entropy(logits, targets, reduction=reduction)
+        else:
+            loss = F.cross_entropy(logits, targets, reduction=reduction)
 
         return loss
 
