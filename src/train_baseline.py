@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2020-12-30
+# @Date:   2020-01-16
 
 import os
 import time
@@ -14,6 +14,7 @@ from baseline import config as ModelConfig
 from baseline.bilstm import BiLstm
 from baseline.bilstm_crf import BiLstmCrf
 from preprocess.data import Data
+from preprocess import config as DataConfig
 from preprocess.util import prepocess_data_for_lstmcrf
 from utils.metric import Metrics
 from utils.util import *
@@ -76,6 +77,10 @@ def train_step(model, optimizer, batch_sents, batch_tags, word2id, tag2id, devic
     targets, lengths = tensorized_label(batch_tags, tag2id)
     targets = targets.to(device)
 
+    # get mask
+    PAD = tag2id.get(DataConfig.PAD_TOKEN)
+    mask = (targets != PAD)  # [B, L]
+
     # forward
     # scores size in bilstm: [B, L, out_size]
     # scores size in  bilstm-crf: [B, L, out_size, out_size]
@@ -83,7 +88,7 @@ def train_step(model, optimizer, batch_sents, batch_tags, word2id, tag2id, devic
 
     # 计算损失 更新参数
     optimizer.zero_grad()
-    loss = model.cal_loss(scores, targets, tag2id).to(device)
+    loss = model.cal_loss(scores, targets, mask).to(device)
     loss.backward()
     optimizer.step()
 
@@ -105,11 +110,15 @@ def validate(model, dev_word_lists, dev_tag_lists, word2id, tag2id, batch_size, 
             targets, lengths = tensorized_label(batch_tags, tag2id)
             targets = targets.to(device)
 
+            # get mask
+            PAD = tag2id.get(DataConfig.PAD_TOKEN)
+            mask = (targets != PAD)  # [B, L]
+
             # forward
             scores = model(tensorized_sents, lengths)
 
             # 计算损失
-            loss = model.cal_loss(scores, targets, tag2id).to(device)
+            loss = model.cal_loss(scores, targets, mask).to(device)
             val_losses += loss.item()
         val_loss = val_losses / val_step
 
@@ -126,7 +135,7 @@ def model_test(model, word_lists, tag_lists, word2id, tag2id, use_crf, device):
     best_model = model.best_model
     best_model.eval()
     with torch.no_grad():
-        batch_tagids = best_model.test(tensorized_sents, lengths, tag2id)
+        batch_tagids = best_model.test(tensorized_sents, lengths)
 
     # 将id转化为标注
     pred_tag_lists = []
@@ -153,7 +162,7 @@ def model_test(model, word_lists, tag_lists, word2id, tag2id, use_crf, device):
     return pred_tag_lists, tag_lists
 
 
-def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name, output_path, log_path, 
+def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name, output_path, log_path,
           use_crf=True, evaluate_on_dev=False):
     """Train model in train-data, evaluate it in dev-data, and finally test it in test-data
 
@@ -196,6 +205,8 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name
         train_word_lists, train_tag_lists = prepocess_data_for_lstmcrf(train_word_lists, train_tag_lists)
         dev_word_lists, dev_tag_lists = prepocess_data_for_lstmcrf(dev_word_lists, dev_tag_lists)
         test_word_lists, test_tag_lists = prepocess_data_for_lstmcrf(test_word_lists, test_tag_lists, test=True)
+    else:
+        word2id, tag2id = data.word_alphabet.instance2index, data.label_alphabet.instance2index
 
     # prepare word embdding
     data.build_pretrain_emb(gaz_file, 'word')
@@ -226,7 +237,7 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name
     save_model(bilstm_model, os.path.join(model_save_path, model_name + '-model.pkl'))
     logger.info("train done, time consuming {} s.".format(int(time.time() - start)))
 
-    # ======== 4. 模型评估 ========
+    # ======== 3. 模型评估 ========
     logger.info("Evaluating model...")
     if evaluate_on_dev:
         evaluate_word_lists = dev_word_lists
@@ -234,9 +245,9 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name
     else:
         evaluate_word_lists = test_word_lists
         evaluate_tag_lists = test_tag_lists
-        
-    pred_tag_lists, test_tag_lists = model_test(bilstm_model, evaluate_word_lists, evaluate_tag_lists, 
-                                                word2id, tag2id, use_crf, device)
+
+    pred_tag_lists, evaluate_tag_lists = model_test(bilstm_model, evaluate_word_lists, evaluate_tag_lists,
+                                                    word2id, tag2id, use_crf, device)
 
     metrics = Metrics(evaluate_tag_lists, pred_tag_lists, logger, remove_O=True)
     metrics.report_scores()
@@ -246,15 +257,15 @@ def train(train_file, dev_file, test_file, gaz_file, model_save_path, model_name
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_file', default='../data/train_demo.col')
-    parser.add_argument('--dev_file', default='../data/dev_demo.col')
+    parser.add_argument('--train_file', default='../data/train.col')
+    parser.add_argument('--dev_file', default='../data/dev.col')
     parser.add_argument('--test_file', default='../data/test.col')
     parser.add_argument('--gaz_file', default='../data/wv_txt.txt')
     parser.add_argument('--model_save_path', default='../saved_model/')
     parser.add_argument('--model_name', default='my_model')
     parser.add_argument('--output_path', default='../data/output/')
     parser.add_argument('--log_path', default='../log/')
-    parser.add_argument('--use_crf', type=bool, default=True)
+    parser.add_argument('--use_crf', type=bool, default=False)
     parser.add_argument('--evaluate_on_dev', type=bool, default=False)
     args = parser.parse_args()
 
