@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 # @Author: jjj
-# @Date:   2021-01-02
+# @Date:   2021-01-16
 
 from typing import Optional
 
 import torch
 import torch.nn as nn
-from itertools import zip_longest
 
 from baseline.bilstm import BiLstm
 from preprocess import config as DataConfig
@@ -29,11 +28,13 @@ class BiLstmPartialCrf(nn.Module):
         self.end_transitions = nn.Parameter(torch.randn(out_size))
         self.transitions = nn.Parameter(torch.ones(out_size, out_size) * 1 / out_size)
 
+        self.features = None
         self.best_model = None
 
     def forward(self, sents_tensor, lengths):
         # [B, L, out_size]
         emission = self.bilstm(sents_tensor, lengths)
+        self.features = self.bilstm.features
 
         return emission
 
@@ -91,22 +92,38 @@ class BiLstmPartialCrf(nn.Module):
 
         return best_tags_list
 
-    def cal_loss(self, scores, targets):
+    def cal_loss(self, scores, targets,
+                 mask: Optional[torch.ByteTensor] = None,
+                 reduction: str = 'sum'):
         """计算BiLSTM-Partial-CRF模型的损失
 
         Args:
-            scores : list of [B, L, T]
-            targets : [B, L, T]
+            scores (`~torch.Tensor`) : [B, L, T]
+            targets (`~torch.Tensor`) : [B, L, T]
+            mask (`~torch.ByteTensor`): Mask tensor of size ``(B, L)``
+            reduction: Specifies  the reduction to apply to the output:
+                ``none|sum|mean``. ``none``: no reduction will be applied.
+                ``sum``: the output will be summed over batches. ``mean``: the output will be
+                averaged over batches.
         """
+        if reduction not in ('none', 'sum', 'mean'):
+            raise ValueError(f'invalid reduction: {reduction}')
         emission = scores
-        mask = torch.ones(targets.size(0), targets.size(1), dtype=torch.uint8, device=targets.device)
+        if mask is None:
+            mask = torch.ones(targets.size(0), targets.size(1), dtype=torch.uint8, device=targets.device)
         possible_tags = targets.clone()
         gold_score = self._numerator_score(emission, targets, mask, possible_tags)
         forward_score = self._denominator_score(emission, mask)
-        return torch.sum(forward_score - gold_score)
+
+        if reduction == 'none':
+            return forward_score - gold_score
+        elif reduction == 'mean':
+            return torch.mean(forward_score - gold_score)
+        else:
+            return torch.sum(forward_score - gold_score)
 
     """=========bilstm-partail-crf tools========="""
-
+    
     def _denominator_score(self, emissions: torch.Tensor,
                            mask: torch.ByteTensor) -> torch.Tensor:
         """
